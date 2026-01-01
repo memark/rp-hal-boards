@@ -19,33 +19,29 @@ pub use hal::entry;
 #[used]
 pub static BOOT2_FIRMWARE: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
-use display_interface_spi::SPIInterface;
-use embedded_graphics::{
-    draw_target::DrawTarget,
-    pixelcolor::{Rgb565, RgbColor},
-};
+use cortex_m::delay::Delay;
+use embedded_graphics::{draw_target::DrawTarget, pixelcolor::Rgb565, prelude::RgbColor};
+use embedded_hal::delay::DelayNs;
 use embedded_hal_0_2::{
     adc::{Channel, OneShot},
-    blocking::delay::DelayUs,
-    digital::v2::{InputPin, OutputPin},
+    digital::v2::InputPin,
     spi::MODE_0,
 };
+use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
 use fugit::RateExtU32;
 pub use hal::pac;
 use hal::{
     adc::Adc,
     gpio::{
-        bank0::{
-            Gpio0, Gpio1, Gpio12, Gpio13, Gpio14, Gpio15, Gpio16, Gpio17, Gpio2, Gpio22, Gpio23,
-            Gpio24, Gpio25, Gpio26, Gpio27, Gpio28, Gpio29, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
-        },
-        FunctionNull, FunctionPwm, FunctionSioInput, FunctionSioOutput, Pin, PullNone, PullUp,
+        bank0::*, FunctionNull, FunctionPwm, FunctionSio, FunctionSioInput, FunctionSpi, Pin,
+        PullNone, PullUp, SioOutput,
     },
     pac::{RESETS, SPI0},
     sio::SioGpioBank0,
     spi::{Enabled, Spi},
 };
-use st7789::ST7789;
+use mipidsi::{interface::SpiInterface, models::ST7789, Builder, Display, NoResetPin};
+use static_cell::StaticCell;
 
 pub mod all_pins {
     hal::bsp_pins!(
@@ -137,6 +133,7 @@ pub struct Pins {
 }
 
 pub const XOSC_CRYSTAL_FREQ: u32 = 12_000_000;
+
 pub enum Button {
     A,
     B,
@@ -155,37 +152,64 @@ pub enum MotorAction {
     Stop,
 }
 
-pub type Screen = ST7789<
-    SPIInterface<
-        Spi<Enabled, SPI0, (all_pins::Mosi, all_pins::Sclk), 8>,
-        Pin<Gpio16, FunctionSioOutput, PullNone>,
-        Pin<Gpio17, FunctionSioOutput, PullNone>,
+pub type Screen<'a> = Display<
+    SpiInterface<
+        'a,
+        ExclusiveDevice<
+            Spi<
+                Enabled,
+                SPI0,
+                (
+                    Pin<Gpio19, FunctionSpi, PullNone>,
+                    Pin<Gpio18, FunctionSpi, PullNone>,
+                ),
+            >,
+            Pin<Gpio17, FunctionSio<SioOutput>, PullNone>,
+            NoDelay,
+        >,
+        Pin<Gpio16, FunctionSio<SioOutput>, PullNone>,
     >,
-    DummyPin,
+    ST7789,
+    NoResetPin,
 >;
 
-pub struct PicoExplorer {
+pub struct PicoExplorer<'a> {
     pub a: Pin<Gpio12, FunctionSioInput, PullUp>,
     pub b: Pin<Gpio13, FunctionSioInput, PullUp>,
     pub x: Pin<Gpio14, FunctionSioInput, PullUp>,
     pub y: Pin<Gpio15, FunctionSioInput, PullUp>,
     adc: Adc,
-    pub screen: Screen,
+    pub screen: Screen<'a>,
 }
 
-pub struct DummyPin;
+static SPI_BUFFER: StaticCell<[u8; 1024]> = StaticCell::new();
 
-impl OutputPin for DummyPin {
-    type Error = ();
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(())
+// Newtype wrapper implementing the delay trait from EH 1.0.
+struct Hal10Delay<'a>(&'a mut Delay);
+
+// This block is copied from (the currently unreleased) commit 5573370 of the cortex-m crate.
+impl<'a> DelayNs for Hal10Delay<'a> {
+    #[inline]
+    fn delay_ns(&mut self, ns: u32) {
+        // from the rp2040-hal:
+        let us = ns / 1000 + if ns % 1000 == 0 { 0 } else { 1 };
+        // With rustc 1.73, this can be replaced by:
+        // let us = ns.div_ceil(1000);
+        Delay::delay_us(self.0, us)
     }
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(())
+
+    #[inline]
+    fn delay_us(&mut self, us: u32) {
+        Delay::delay_us(self.0, us)
+    }
+
+    #[inline]
+    fn delay_ms(&mut self, ms: u32) {
+        Delay::delay_ms(self.0, ms)
     }
 }
 
-impl PicoExplorer {
+impl<'a> PicoExplorer<'a> {
     pub fn new(
         io: pac::IO_BANK0,
         pads: pac::PADS_BANK0,
@@ -193,7 +217,7 @@ impl PicoExplorer {
         spi0: SPI0,
         adc: Adc,
         resets: &mut RESETS,
-        delay: &mut impl DelayUs<u32>,
+        delay: &mut Delay,
     ) -> (Self, Pins) {
         let internal_pins = all_pins::Pins::new(io, pads, sio, resets);
 
@@ -212,16 +236,14 @@ impl PicoExplorer {
         let spi_sclk = internal_pins.spi_sclk.reconfigure();
         let spi_mosi = internal_pins.spi_mosi.reconfigure();
 
-        let spi_screen =
+        let spi_bus =
             Spi::new(spi0, (spi_mosi, spi_sclk)).init(resets, 125u32.MHz(), 16u32.MHz(), MODE_0);
-
-        let spii_screen = SPIInterface::new(spi_screen, dc, cs);
-
-        let mut screen = ST7789::new(spii_screen, DummyPin, 240, 240);
-
-        screen.init(delay).unwrap();
-        screen
-            .set_orientation(st7789::Orientation::Portrait)
+        let spi_device = ExclusiveDevice::new_no_delay(spi_bus, cs).unwrap();
+        let spi_buffer = SPI_BUFFER.init([0; _]);
+        let di = SpiInterface::new(spi_device, dc, spi_buffer);
+        let mut screen = Builder::new(ST7789, di)
+            .display_size(240, 240)
+            .init(&mut Hal10Delay(delay))
             .unwrap();
         screen.clear(Rgb565::BLACK).unwrap();
 
