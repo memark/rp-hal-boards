@@ -20,12 +20,11 @@ pub use hal::entry;
 pub static BOOT2_FIRMWARE: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
 use cortex_m::delay::Delay;
-use embedded_graphics::{draw_target::DrawTarget, pixelcolor::Rgb565, prelude::RgbColor};
-use embedded_hal::delay::DelayNs;
+use embedded_graphics_0_8::{draw_target::DrawTarget, pixelcolor::Rgb565, prelude::RgbColor};
+use embedded_hal::{delay::DelayNs, spi::MODE_0};
 use embedded_hal_0_2::{
     adc::{Channel, OneShot},
     digital::v2::InputPin,
-    spi::MODE_0,
 };
 use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
 use fugit::RateExtU32;

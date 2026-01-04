@@ -3,7 +3,7 @@
 
 use arrayvec::ArrayString;
 use core::fmt::Write;
-use embedded_graphics::{
+use embedded_graphics_0_8::{
     mono_font::{ascii::FONT_10X20, MonoTextStyleBuilder},
     pixelcolor::Rgb565,
     prelude::*,
