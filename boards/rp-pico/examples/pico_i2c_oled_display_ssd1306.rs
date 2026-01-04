@@ -67,7 +67,7 @@ use rp_pico::hal;
 
 // For in the graphics drawing utilities like the font
 // and the drawing routines:
-use embedded_graphics::{
+use embedded_graphics_0_8::{
     mono_font::{ascii::FONT_9X18_BOLD, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
     prelude::*,
@@ -162,7 +162,7 @@ fn main() -> ! {
         count += 1;
 
         // Empty the display:
-        display.clear();
+        display.clear(BinaryColor::Off).unwrap();
 
         // Draw 3 lines of text:
         Text::with_baseline("Hello world!", Point::zero(), text_style, Baseline::Top)
