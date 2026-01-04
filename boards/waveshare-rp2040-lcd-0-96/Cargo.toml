@@ -21,7 +21,7 @@ panic-halt.workspace = true
 embedded-hal.workspace = true
 fugit.workspace = true
 nb.workspace = true
-embedded-graphics.workspace = true
+embedded-graphics-0-8.workspace = true
 st7735-lcd = { workspace = true, features = ["graphics"] }
 
 [features]

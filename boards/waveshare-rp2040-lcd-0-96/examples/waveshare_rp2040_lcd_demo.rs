@@ -7,7 +7,7 @@
 #![no_main]
 
 use cortex_m::delay::Delay;
-use embedded_graphics::primitives::Line;
+use embedded_graphics_0_8::primitives::Line;
 use fugit::RateExtU32;
 use panic_halt as _;
 
@@ -24,7 +24,7 @@ use waveshare_rp2040_lcd_0_96::{
     Pins, XOSC_CRYSTAL_FREQ,
 };
 
-use embedded_graphics::{
+use embedded_graphics_0_8::{
     pixelcolor::Rgb565,
     prelude::*,
     primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
