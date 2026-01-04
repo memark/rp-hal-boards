@@ -21,13 +21,15 @@ pub static BOOT2_FIRMWARE: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
 use cortex_m::delay::Delay;
 use embedded_graphics::{draw_target::DrawTarget, pixelcolor::Rgb565, prelude::RgbColor};
-use embedded_hal::delay::DelayNs;
+// use embedded_hal::delay::DelayNs;
 use embedded_hal_0_2::{
     adc::{Channel, OneShot},
     digital::v2::InputPin,
     spi::MODE_0,
 };
 use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
+use embedded_hal_compat::Forward;
+use embedded_hal_compat::ForwardCompat;
 use fugit::RateExtU32;
 pub use hal::pac;
 use hal::{
@@ -184,30 +186,30 @@ pub struct PicoExplorer<'a> {
 
 static SPI_BUFFER: StaticCell<[u8; 1024]> = StaticCell::new();
 
-// Newtype wrapper implementing the delay trait from EH 1.0.
-struct Hal10Delay<'a>(&'a mut Delay);
+// // Newtype wrapper implementing the delay trait from EH 1.0.
+// struct Hal10Delay<'a>(&'a mut Delay);
 
-// This block is copied from (the currently unreleased) commit 5573370 of the cortex-m crate.
-impl<'a> DelayNs for Hal10Delay<'a> {
-    #[inline]
-    fn delay_ns(&mut self, ns: u32) {
-        // from the rp2040-hal:
-        let us = ns / 1000 + if ns % 1000 == 0 { 0 } else { 1 };
-        // With rustc 1.73, this can be replaced by:
-        // let us = ns.div_ceil(1000);
-        Delay::delay_us(self.0, us)
-    }
+// // This block is copied from (the currently unreleased) commit 5573370 of the cortex-m crate.
+// impl<'a> DelayNs for Hal10Delay<'a> {
+//     #[inline]
+//     fn delay_ns(&mut self, ns: u32) {
+//         // from the rp2040-hal:
+//         let us = ns / 1000 + if ns % 1000 == 0 { 0 } else { 1 };
+//         // With rustc 1.73, this can be replaced by:
+//         // let us = ns.div_ceil(1000);
+//         Delay::delay_us(self.0, us)
+//     }
 
-    #[inline]
-    fn delay_us(&mut self, us: u32) {
-        Delay::delay_us(self.0, us)
-    }
+//     #[inline]
+//     fn delay_us(&mut self, us: u32) {
+//         Delay::delay_us(self.0, us)
+//     }
 
-    #[inline]
-    fn delay_ms(&mut self, ms: u32) {
-        Delay::delay_ms(self.0, ms)
-    }
-}
+//     #[inline]
+//     fn delay_ms(&mut self, ms: u32) {
+//         Delay::delay_ms(self.0, ms)
+//     }
+// }
 
 impl<'a> PicoExplorer<'a> {
     pub fn new(
@@ -241,9 +243,14 @@ impl<'a> PicoExplorer<'a> {
         let spi_device = ExclusiveDevice::new_no_delay(spi_bus, cs).unwrap();
         let spi_buffer = SPI_BUFFER.init([0; _]);
         let di = SpiInterface::new(spi_device, dc, spi_buffer);
+
+        fn func(delay_source: impl embedded_hal::delay::DelayNs) {}
+        let delay2: Forward<_, _> = delay.forward();
+        func(delay2);
+
         let mut screen = Builder::new(ST7789, di)
             .display_size(240, 240)
-            .init(&mut Hal10Delay(delay))
+            .init(&mut delay2)
             .unwrap();
         screen.clear(Rgb565::BLACK).unwrap();
 
