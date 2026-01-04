@@ -24,7 +24,7 @@ use waveshare_rp2040_lcd_1_28::{
     Pins, XOSC_CRYSTAL_FREQ,
 };
 
-use embedded_graphics::{
+use embedded_graphics_0_8::{
     pixelcolor::Rgb565,
     prelude::*,
     primitives::{Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},

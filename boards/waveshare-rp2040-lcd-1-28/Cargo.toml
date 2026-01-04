@@ -21,7 +21,7 @@ panic-halt.workspace = true
 embedded-hal.workspace = true
 fugit.workspace = true
 nb.workspace = true
-embedded-graphics.workspace = true
+embedded-graphics-0-8.workspace = true
 gc9a01a_driver = { workspace = true }
 
 [features]
